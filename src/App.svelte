@@ -7,7 +7,7 @@
 <main>
 	<Router>
 		<Route path="/" component={Home} />
-		<Route path="treemap" component={Treemap} />
+		<Route path="/treemap" component={Treemap} />
 	</Router>  
 </main>
 

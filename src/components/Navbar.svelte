@@ -5,7 +5,7 @@
 <nav>
     <ul>
         <li><Link to="/">Home</Link></li>
-        <li><Link to="treemap">Treemap Visualization</Link></li>
+        <li><Link to="/treemap">Treemap Visualization</Link></li>
     </ul>
 </nav>
   
