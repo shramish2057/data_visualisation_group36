@@ -6,10 +6,19 @@
   let staticMapSvg, comparisonSvg, tooltip, staticMapData;
   let tilingMethod = 'treemapSquarify'; 
   let selectedNodes = new Set();
+  let dateRange = [];
+  let startDate, endDate;
 
   let colorScaleRegions = d3.scaleOrdinal(d3.schemeTableau10);
   let colorScaleTerritories = d3.scaleOrdinal(d3.schemeTableau10);
 
+  function formatDate(date) {
+    return d3.timeFormat("%Y-%m-%d")(date);
+  }
+
+  function parseDate(dateString) {
+    return d3.timeParse("%Y-%m-%d")(dateString);
+  }
 
   function parseOrderValue(productPrices) {
     return productPrices.split(',').map(price => parseInt(price.trim())).reduce((a, b) => a + b, 0);
@@ -49,9 +58,14 @@
 }
 
 async function loadDataForStaticTreemap() {
-    const staticMapOrders = await d3.csv('data/Orders.csv');
+    const staticMapOrders = await d3.csv('data/Orders.csv', d => {
+      d.OrderDate = parseDate(d.OrderDate);
+      return d;
+    });
     const staticMapRegions = await d3.csv('data/Regions.csv');
 
+    // Filter orders within selected date
+    let filteredOrders = staticMapOrders.filter(d => (!startDate || d.OrderDate >= parseDate(startDate)) && (!endDate || d.OrderDate <= parseDate(endDate)));
     let regionStaticMap = new Map();
 
     staticMapRegions.forEach(regionData => {
@@ -65,7 +79,7 @@ async function loadDataForStaticTreemap() {
       });
     });
 
-    staticMapOrders.forEach(order => {
+    filteredOrders.forEach(order => {
       const territoryName = order.Territory;
       for (const region of regionStaticMap.values()) {
         const territoryEntry = region.children.find(t => t.name === territoryName);
@@ -118,10 +132,8 @@ async function loadDataForStaticTreemap() {
       .sum(d => d.value)
       .sort((a, b) => b.value - a.value);
 
-
-    console.log("selectedTilingMethod", tilingMethod)
     const treemap = d3.treemap()
-      .tile(d3[tilingMethod] || d3.treemapSquarify) 
+      .tile(d3[tilingMethod])
       .size([1160, 740])
       .padding(1)
       .round(true);
@@ -135,39 +147,36 @@ async function loadDataForStaticTreemap() {
       .join("g")
       .attr("transform", d => `translate(${d.x0},${d.y0})`)
       .on("click", (event, d) => {
-        if (selectedNodes.has(d)) {
-          selectedNodes.delete(d);
-          d3.select(event.currentTarget).select('rect').style('stroke', null);
-        } else {
-          selectedNodes.add(d);
-          d3.select(event.currentTarget).select('rect').style('stroke', 'black').style('stroke-width', 2);
-        }
-        updateComparisonPanel(); 
+        toggleSelection(d.data.name);
+        updateComparisonPanel();
       });
 
-      leaf.append("rect")
-        .attr("fill", d => {
-          const regionColor = colorScaleRegions(d.parent.data.name);
-          return getTerritoryColor(regionColor, d.data.quantity, d.parent.data.totalQuantity);
-        })
-        .attr("width", d => d.x1 - d.x0)
-        .attr("height", d => d.y1 - d.y0)
-        .on("mouseover", (event, d) => {
-          tooltip.style("display", "block")
-                .html(`Region: ${d.parent.data.name}<br>
-                        Territory: ${d.data.name}<br>
-                        Order Value: $${d.data.value}<br>
-                        Quantity: ${d.data.quantity}`)
-                .style("left", `${event.pageX}px`)
-                .style("top", `${event.pageY}px`);
-        })
-        .on("mousemove", (event) => {
-          tooltip.style("left", `${event.pageX + 10}px`)
-                .style("top", `${event.pageY + 10}px`);
-        })
-        .on("mouseout", () => {
-          tooltip.style("display", "none");
-        });
+    leaf.append("rect")
+      .attr("fill", d => {
+        const regionColor = colorScaleRegions(d.parent.data.name);
+        return getTerritoryColor(regionColor, d.data.quantity, d.parent.data.totalQuantity);
+      })
+      .attr("width", d => d.x1 - d.x0)
+      .attr("height", d => d.y1 - d.y0)
+      .each(function(d) {
+        if (selectedNodes.has(d.data.name)) {
+          d3.select(this).style('stroke', 'black').style('stroke-width', 2);
+        } else {
+          d3.select(this).style('stroke', null);
+        }
+      })
+      .on("mouseover", (event, d) => {
+        tooltip.style("display", "block")
+          .html(`Region: ${d.parent.data.name}<br>
+                  Territory: ${d.data.name}<br>
+                  Order Value: $${d.data.value}<br>
+                  Quantity: ${d.data.quantity}`)
+          .style("left", `${event.pageX}px`)
+          .style("top", `${event.pageY}px`);
+      })
+      .on("mouseout", () => {
+        tooltip.style("display", "none");
+      });
 
     leaf.append("text")
       .attr("x", 5)
@@ -176,6 +185,17 @@ async function loadDataForStaticTreemap() {
       .text(d => `${d.data.name}`);
 
     drawLegend();
+    updateComparisonPanel(); // Ensure the panel is updated
+  }
+
+  function toggleSelection(name) {
+    if (selectedNodes.has(name)) {
+      selectedNodes.delete(name);
+    } else {
+      selectedNodes.add(name);
+    }
+    // Redraw the treemap to update selections visually
+    drawStaticTreemap();
   }
 
   function drawLegend() {
@@ -214,29 +234,31 @@ async function loadDataForStaticTreemap() {
       .text(d => d);
   }
 
-// Using d3.interpolateViridis for continuous color scale
-function getColor(index, total) {
+  // Using d3.interpolateViridis for continuous color scale
+  function getColor(index, total) {
     return d3.interpolateViridis(index / total);
-}
+  }
 
-function updateColorScale() {
-    const territories = Array.from(selectedNodes).map(node => node.data.name);
+  function updateColorScale(data) {
+    const territories = data.map(node => node.name);
     const total = territories.length;
     territories.forEach((territory, index) => {
         colorScaleTerritories(territory, getColor(index, total));
     });
-}
+  }
 
   function updateComparisonPanel() {
     if (!comparisonSvg || selectedNodes.size === 0) {
         comparisonSvg.selectAll("*").remove();
         return;
-    }
-
-    updateColorScale(); 
+  }
     comparisonSvg.selectAll("*").remove();
 
-    const data = Array.from(selectedNodes).map(node => node.data).filter(data => data && data.name);
+    const data = Array.from(selectedNodes).map(name =>
+      staticMapData.children.flatMap(region => region.children)
+      .find(node => node.name === name));
+
+    updateColorScale(data); // Pass the actual data to update colors
     const margin = { top: 80, right: 20, bottom: 100, left: 80 }; // More space for titles
     const width = 1200 - margin.left - margin.right;
     const height = 600 - margin.top - margin.bottom;
@@ -333,6 +355,22 @@ function updateColorScale() {
         .text(d => d);
   }
 
+  function handleDateChange() {
+    loadDataForStaticTreemap();
+  }
+
+  onMount(async () => {
+    const ordersData = await d3.csv('data/Orders.csv', d => {
+      d.OrderDate = parseDate(d.OrderDate);
+      return d;
+    });
+
+    dateRange = d3.extent(ordersData, d => d.OrderDate);
+    startDate = formatDate(dateRange[0]); // Initialize to the full range
+    endDate = formatDate(dateRange[1]);
+
+    loadDataForStaticTreemap();
+  });
 
   onMount(() => {
     staticMapSvg = d3.select('#statictreemap').append('svg')
@@ -373,13 +411,16 @@ function updateColorScale() {
 <h4>Please click on specific territories to see comparision of order value across territories</h4>
 <div class="tiling-method-container">
   <h5>Tiling Method</h5>
-  <select bind:value={tilingMethod}>
+  <select class="selection" bind:value={tilingMethod}>
     <option value="treemapSquarify">Squarify</option>
     <option value="treemapBinary">Binary</option>
     <option value="treemapSliceDice">Slice-dice</option>
     <option value="treemapSlice">Slice</option>
     <option value="treemapDice">Dice</option>
   </select>
+  <h5>Order date Range</h5>
+  <input type="date" bind:value={startDate} on:change={handleDateChange} min={formatDate(dateRange[0])} max={formatDate(dateRange[1])}>
+  <input type="date" bind:value={endDate} on:change={handleDateChange} min={formatDate(dateRange[0])} max={formatDate(dateRange[1])}>
 </div>
 <h3>Regions</h3>
 <div id="statictreemap"></div>
@@ -417,7 +458,10 @@ function updateColorScale() {
   }
 
   .tiling-method-container h5 {
-    margin-right: 10px;  
+    margin-right: 20px;  
+  }
+  .selection {
+    margin-right: 50px;  
   }
 
 </style>
