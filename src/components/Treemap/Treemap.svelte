@@ -1,173 +1,425 @@
 <script>
+  import Navbar from '../Navbar.svelte';
   import { onMount } from 'svelte';
   import * as d3 from 'd3';
-  import Navbar from '../Navbar.svelte';
-  import TreemapStatic from './TreemapStatic.svelte';
 
-  let svg;
-  let currentRoot, currentDepth = 0;
+  let staticMapSvg, comparisonSvg, tooltip, staticMapData;
+  let tilingMethod = 'treemapSquarify'; 
+  let selectedNodes = new Set();
+
   let colorScaleRegions = d3.scaleOrdinal(d3.schemeTableau10);
-  let colorScaleTerritories = d3.scaleOrdinal(d3.schemeSet3); ;
-  let colorScaleAccountTypes = d3.scaleOrdinal(d3.schemeSet3);
+  let colorScaleTerritories = d3.scaleOrdinal(d3.schemeTableau10);
 
-  async function loadData() {
-      const orders = await d3.csv('data/orders.csv');
-      const regions = await d3.csv('data/regions.csv');
-      const customers = await d3.csv('data/customers.csv');
 
-      // Mapping regions to their respective territories
-      let regionMap = new Map();
-      regions.forEach(region => {
-          regionMap.set(region.Region, { name: region.Region, children: [], value: 0 });
-      });
-
-      // Mapping territories to their respective account types and aggregating values
-      orders.forEach(order => {
-          let region = regions.find(region => region.Territory === order.Territory);
-          let customer = customers.find(customer => customer.Territory === order.Territory);
-          if (region) {
-              let regionEntry = regionMap.get(region.Region);
-              let territoryEntry = regionEntry.children.find(t => t.name === order.Territory);
-              if (!territoryEntry) {
-                  territoryEntry = { name: order.Territory, children: [], value: 0 };
-                  regionEntry.children.push(territoryEntry);
-              }
-              let accountTypeEntry = territoryEntry.children.find(a => a.name === customer['Account Type']);
-              if (!accountTypeEntry) {
-                  accountTypeEntry = { name: customer['Account Type'], value: 0 };
-                  territoryEntry.children.push(accountTypeEntry);
-              }
-              // Assuming 'Quantities' indicates the quantity of each order
-              let quantities = order.Quantities.split(', ').map(Number).reduce((a, b) => a + b, 0);
-              accountTypeEntry.value += quantities;  
-              territoryEntry.value += quantities; 
-              regionEntry.value += quantities;     
-          }
-      });
-
-      return { name: "Root", children: Array.from(regionMap.values()) };
+  function parseOrderValue(productPrices) {
+    return productPrices.split(',').map(price => parseInt(price.trim())).reduce((a, b) => a + b, 0);
   }
 
-  function updateTreemap(rootData, depth) {
-    currentRoot = rootData;
-    currentDepth = depth;
+  function parseQuantities(quantities) {
+    return quantities.split(',')
+                     .map(qty => parseInt(qty.trim()))
+                     .filter(qty => !isNaN(qty))
+                     .reduce((a, b) => a + b, 0);
+  }
 
-    svg.selectAll('*').remove();
-    const root = d3.hierarchy(rootData)
-        .sum(d => d.value) 
-        .sort((a, b) => b.value - a.value); 
-
-    const treemap = d3.treemap()
-                      .tile(d3.treemapSquarify)  
-                      .size([1160, 740])
-                      .paddingInner(1)  
-                      .round(true);
-    treemap(root);
-
-
-    let nodes;
-    if (depth === 0) {
-        nodes = root.children;  
-    } else {
-
-        let parent = root.find(d => d.data === currentRoot);
-        nodes = parent ? parent.children : [];
-    }
-
-    const leaf = svg.selectAll('g')
-                    .data(nodes)
-                    .enter()
-                    .append('g')
-                    .attr('transform', d => `translate(${d.x0},${d.y0})`);
-
-    leaf.append('rect')
-        .attr('id', d => d.data.id)
-        .attr('fill', d => {
-            if (depth === 0) return colorScaleRegions(d.data.name);
-            else if (depth === 1) return colorScaleTerritories(d.data.name);
-            else return colorScaleAccountTypes(d.data.name);
-        })
-        .attr('width', d => d.x1 - d.x0)
-        .attr('height', d => d.y1 - d.y0);
-
-    leaf.append('text')
-        .attr('x', 5)
-        .attr('y', '1.1em')
-        .text(d => d.data.name);
-
-    setupTooltips(leaf);
-
-    leaf.on('click', (event, d) => {
-        if (currentDepth < 2) {  
-            updateTreemap(d.data, currentDepth + 1);
-        }
+  function setupColorScaling() {
+  let maxQuantity = 0;
+  staticMapData.children.forEach(region => {
+    region.children.forEach(territory => {
+      if (territory.quantity > maxQuantity) {
+        maxQuantity = territory.quantity;
+      }
     });
+  });
+
+  getTerritoryColor = function(baseColor, quantity) {
+    let maxQuantity = 0;
+    staticMapData.children.forEach(region => {
+      region.children.forEach(territory => {
+        if (territory.quantity > maxQuantity) {
+          maxQuantity = territory.quantity;
+        }
+      });
+    });
+
+    let relativeQuantity = quantity / maxQuantity;
+    return d3.color(baseColor).darker(2 - 2 * relativeQuantity).formatHex(); 
+  };
+
+}
+
+async function loadDataForStaticTreemap() {
+    const staticMapOrders = await d3.csv('data/Orders.csv');
+    const staticMapRegions = await d3.csv('data/Regions.csv');
+
+    let regionStaticMap = new Map();
+
+    staticMapRegions.forEach(regionData => {
+      if (!regionStaticMap.has(regionData.Region)) {
+        regionStaticMap.set(regionData.Region, { name: regionData.Region, children: [] });
+      }
+      regionStaticMap.get(regionData.Region).children.push({
+        name: regionData.Territory,
+        value: 0,
+        quantity: 0
+      });
+    });
+
+    staticMapOrders.forEach(order => {
+      const territoryName = order.Territory;
+      for (const region of regionStaticMap.values()) {
+        const territoryEntry = region.children.find(t => t.name === territoryName);
+        if (territoryEntry) {
+          territoryEntry.value += parseOrderValue(order.ProductPricesInCP);
+          territoryEntry.quantity += parseQuantities(order.Quantities);
+        }
+      }
+    });
+
+    staticMapData = { name: "Root", children: Array.from(regionStaticMap.values()) };
+
+    // Set the color scale for regions once and do not change it
+    colorScaleRegions.domain(staticMapData.children.map(region => region.name));
+
+    if (!staticMapSvg) {
+      staticMapSvg = d3.select('#statictreemap').append('svg')
+            .attr('width', 1200)
+            .attr('height', 800)  
+            .style('font', '10px sans-serif');
+      comparisonSvg = d3.select('#comparisonChart').append('svg')
+            .attr('width', 1200)
+            .attr('height', 600)
+            .style('font', '10px sans-serif');
+
+      drawStaticTreemap();
+    }
+    setupColorScaling();
 }
 
 
-
-  function setupTooltips(leaf) {
-    leaf.on('mouseover', (event, d) => {
-      const tooltip = d3.select('#tooltip');
-      let orderValue = d.data.value;
-      let orderValueDisplay = orderValue ? orderValue.toFixed(2) : 'N/A'; 
-      console.log("specific data", JSON.stringify(d.data))
-      tooltip.style('opacity', 1)
-        .style('left', (event.pageX + 10) + 'px')
-        .style('top', (event.pageY + 10) + 'px')
-        .html(`
-          <strong>Component:</strong> ${d.data.name}<br>
-          <strong>Order Value:</strong> ${orderValueDisplay}
-        `);
-    }).on('mousemove', event => {
-      d3.select('#tooltip')
-        .style('left', (event.pageX + 10) + 'px')
-        .style('top', (event.pageY + 10) + 'px');
-    }).on('mouseout', () => {
-      d3.select('#tooltip').style('opacity', 0);
+  function getTerritoryColor(baseColor, quantity) {
+    let maxQuantity = 0;
+    staticMapData.children.forEach(region => {
+      region.children.forEach(territory => {
+        if (territory.quantity > maxQuantity) {
+          maxQuantity = territory.quantity;
+        }
+      });
     });
+
+    let relativeQuantity = quantity / maxQuantity;
+    return d3.color(baseColor).darker(2 - 2 * relativeQuantity).formatHex(); 
+  };
+  
+  function drawStaticTreemap() {
+    if (!staticMapData) return;
+
+    const root = d3.hierarchy(staticMapData)
+      .sum(d => d.value)
+      .sort((a, b) => b.value - a.value);
+
+
+    console.log("selectedTilingMethod", tilingMethod)
+    const treemap = d3.treemap()
+      .tile(d3[tilingMethod] || d3.treemapSquarify) 
+      .size([1160, 740])
+      .padding(1)
+      .round(true);
+    treemap(root);
+
+    staticMapSvg.selectAll("g").remove(); 
+    const leaf = staticMapSvg.append("g")
+      .attr("transform", "translate(0,100)")
+      .selectAll("g")
+      .data(root.leaves())
+      .join("g")
+      .attr("transform", d => `translate(${d.x0},${d.y0})`)
+      .on("click", (event, d) => {
+        if (selectedNodes.has(d)) {
+          selectedNodes.delete(d);
+          d3.select(event.currentTarget).select('rect').style('stroke', null);
+        } else {
+          selectedNodes.add(d);
+          d3.select(event.currentTarget).select('rect').style('stroke', 'black').style('stroke-width', 2);
+        }
+        updateComparisonPanel(); 
+      });
+
+      leaf.append("rect")
+        .attr("fill", d => {
+          const regionColor = colorScaleRegions(d.parent.data.name);
+          return getTerritoryColor(regionColor, d.data.quantity, d.parent.data.totalQuantity);
+        })
+        .attr("width", d => d.x1 - d.x0)
+        .attr("height", d => d.y1 - d.y0)
+        .on("mouseover", (event, d) => {
+          tooltip.style("display", "block")
+                .html(`Region: ${d.parent.data.name}<br>
+                        Territory: ${d.data.name}<br>
+                        Order Value: $${d.data.value}<br>
+                        Quantity: ${d.data.quantity}`)
+                .style("left", `${event.pageX}px`)
+                .style("top", `${event.pageY}px`);
+        })
+        .on("mousemove", (event) => {
+          tooltip.style("left", `${event.pageX + 10}px`)
+                .style("top", `${event.pageY + 10}px`);
+        })
+        .on("mouseout", () => {
+          tooltip.style("display", "none");
+        });
+
+    leaf.append("text")
+      .attr("x", 5)
+      .attr("y", 20)
+      .style('font', '6px sans-serif')
+      .text(d => `${d.data.name}`);
+
+    drawLegend();
   }
 
-  onMount(async () => {
-    const hierarchicalData = await loadData();
-    svg = d3.select('#treemap').append('svg')
-            .attr('width', 1200)
-            .attr('height', 800)
-            .style('font', '10px sans-serif');
-    updateTreemap(hierarchicalData, 0);
+  function drawLegend() {
+    const itemsPerRow = 5;  
+    const horizontalSpacing = 150;  
+    const verticalSpacing = 30;  
 
+    const numItems = colorScaleRegions.domain().length;
+    const numRows = Math.ceil(numItems / itemsPerRow);
+    const effectiveItemsInRow = numItems > itemsPerRow ? itemsPerRow : numItems;
+    const totalWidth = effectiveItemsInRow * horizontalSpacing;
+    const startX = (1160 - totalWidth) / 2;  
+
+    const legend = staticMapSvg.append("g")
+      .attr("transform", `translate(${startX}, 10)`);
+
+    const legendItem = legend.selectAll(null)
+      .data(colorScaleRegions.domain())
+      .enter()
+      .append("g")
+      .attr("transform", (d, i) => {
+        const x = (i % itemsPerRow) * horizontalSpacing;
+        const y = Math.floor(i / itemsPerRow) * verticalSpacing;
+        return `translate(${x}, ${y})`;
+      });
+
+    legendItem.append("rect")
+      .attr("width", 18)
+      .attr("height", 18)
+      .attr("fill", d => colorScaleRegions(d));
+
+    legendItem.append("text")
+      .attr("x", 24)
+      .attr("y", 9)
+      .attr("dy", ".35em")
+      .text(d => d);
+  }
+
+// Using d3.interpolateViridis for continuous color scale
+function getColor(index, total) {
+    return d3.interpolateViridis(index / total);
+}
+
+function updateColorScale() {
+    const territories = Array.from(selectedNodes).map(node => node.data.name);
+    const total = territories.length;
+    territories.forEach((territory, index) => {
+        colorScaleTerritories(territory, getColor(index, total));
+    });
+}
+
+  function updateComparisonPanel() {
+    if (!comparisonSvg || selectedNodes.size === 0) {
+        comparisonSvg.selectAll("*").remove();
+        return;
+    }
+
+    updateColorScale(); 
+    comparisonSvg.selectAll("*").remove();
+
+    const data = Array.from(selectedNodes).map(node => node.data).filter(data => data && data.name);
+    const margin = { top: 80, right: 20, bottom: 100, left: 80 }; // More space for titles
+    const width = 1200 - margin.left - margin.right;
+    const height = 600 - margin.top - margin.bottom;
+
+    const x = d3.scaleBand().rangeRound([0, width]).padding(0.1);
+    const y = d3.scaleLinear().rangeRound([height, 0]);
+
+    const g = comparisonSvg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+    x.domain(data.map(d => d.name));
+    y.domain([0, d3.max(data, d => d.value)]);
+
+    const xAxisGroup = g.append("g")
+        .attr("transform", `translate(0,${height})`)
+        .call(d3.axisBottom(x));
+    xAxisGroup.append("text")
+        .attr("class", "axis-title")
+        .attr("y", 50) 
+        .attr("x", width / 2)
+        .attr("text-anchor", "middle")
+        .text("Territory Names");
+
+    const yAxisGroup = g.append("g")
+        .call(d3.axisLeft(y).ticks(10, "s"));
+    yAxisGroup.append("text")
+        .attr("class", "axis-title")
+        .attr("transform", "rotate(-90)")
+        .attr("y", -60) 
+        .attr("dy", ".71em")
+        .attr("text-anchor", "end")
+        .text("Values");
+
+        g.selectAll(".bar")
+          .data(data)
+          .enter().append("rect")
+          .attr("class", "bar")
+          .attr("x", d => x(d.name))
+          .attr("width", x.bandwidth())
+          .attr("y", d => y(d.value))
+          .attr("height", d => height - y(d.value))
+          .attr("fill", d => colorScaleTerritories(d.name)) 
+          .on("mouseover", (event, d) => {
+            tooltip.style("display", "block");
+          })
+          .on("mousemove", (event, d) => {
+            tooltip.html(`Order Value: $${d.value}`)
+                  .style("left", (event.pageX + 10) + "px")
+                  .style("top", (event.pageY - 10) + "px");
+          })
+          .on("mouseout", () => {
+            tooltip.style("display", "none");
+          });
+
+      comparisonSvg.append("text")
+      .attr("class", "chart-title")
+      .attr("x", 600) 
+      .attr("y", 30) 
+      .attr("text-anchor", "middle")
+      .style("font-size", "18px")
+      .style("font-weight", "bold") 
+      .style("fill", "#333") 
+      .text("Comparison of Order Values across Selected Territories");
+
+
+      addBarLegend(data); 
+  }
+
+  function addBarLegend(data) {
+      const legend = comparisonSvg.append("g")
+        .attr("transform", "translate(150, 605)");
+
+      // Adding the header for the bar graph legend
+      legend.append("text")
+        .attr("class", "legend-title")
+        .attr("x", 420)
+        .attr("y", -30)
+        .style("font-size", "14px")
+        .style("font-weight", "bold")
+        .text("Selected Territories");
+
+      const legendItems = legend.selectAll(".legend")
+        .data(data.map(d => d.name)) 
+        .enter().append("g")
+        .attr("class", "legend")
+        .attr("transform", (d, i) => `translate(${i * 150}, 0)`);
+
+      legendItems.append("rect")
+        .attr("width", 18)
+        .attr("height", 18)
+        .style("fill", d => colorScaleTerritories(d));
+      legendItems.append("text")
+        .attr("x", 24)
+        .attr("y", 9)
+        .attr("dy", ".35em")
+        .text(d => d);
+  }
+
+
+  onMount(() => {
+    staticMapSvg = d3.select('#statictreemap').append('svg')
+            .attr('width', 1200)
+            .attr('height', 900)  
+            .style('font', '10px sans-serif');
+
+    comparisonSvg = d3.select('#comparisonChart').append('svg')
+            .attr('width', 1200)
+            .attr('height', 650)
+            .style('font', '10px sans-serif');
+
+    loadDataForStaticTreemap().then(() => {
+      drawStaticTreemap();
+      setupColorScaling();
+    });
+
+    tooltip = d3.select("body").append("div")
+               .attr("class", "tooltip")
+               .style("position", "absolute")
+               .style("z-index", "10")
+               .style("display", "none")
+               .style("padding", "10px")
+               .style("background", "rgba(255, 255, 255, 0.8)")
+               .style("border", "1px solid #000")
+               .style("border-radius", "5px");
   });
+
+  $: if (staticMapSvg && staticMapData && tilingMethod) {
+    console.log("Tiling method changed to:", tilingMethod); 
+    drawStaticTreemap();
+  }
 </script>
 
 
 <Navbar />
-
 <h3>Treemap for Order sales and Quantity through different Regions and subsequent Territories</h3>
-<TreemapStatic />
-<h3>Drilldown Treemap (With Drilldown feature)</h3>
-<div id="treemap">
-  <div id="tooltip" style="position: absolute; opacity: 0; pointer-events: none; background: white; border: 1px solid #ccc; padding: 10px;"></div>
+<h4>Please click on specific territories to see comparision of order value across territories</h4>
+<div class="tiling-method-container">
+  <h5>Tiling Method</h5>
+  <select bind:value={tilingMethod}>
+    <option value="treemapSquarify">Squarify</option>
+    <option value="treemapBinary">Binary</option>
+    <option value="treemapSliceDice">Slice-dice</option>
+    <option value="treemapSlice">Slice</option>
+    <option value="treemapDice">Dice</option>
+  </select>
 </div>
+<h3>Regions</h3>
+<div id="statictreemap"></div>
+<div id="comparisonChart"></div>
 
 <style>
-  #treemap svg {
-    margin: 0 auto;
-    margin-top: 5px;
-    display: block;
-    background-color: #f4f4f4;
+  .tooltip {
+    font-size: 14px;
   }
-  
-  #tooltip {
-    position: absolute;
-    background: rgba(255, 255, 255, 0.95);
-    border: 1px solid #ddd;
-    border-radius: 5px;
-    padding: 10px;
-    font-size: 0.9em;
-    pointer-events: none;
-    transition: opacity 0.3s;
-    z-index: 10;
+  .bar {
+    fill: steelblue;
   }
+  .axis-title {
+    fill: #333;
+    font-size: 14px;
+    font-family: 'Arial', sans-serif;
+  }
+  .chart-title {
+    fill: #333;
+    font-size: 24px; 
+    font-weight: bold;
+    font-family: 'Arial', sans-serif;
+  }
+  .tiling-method-container {
+    display: flex; 
+    align-items: center; 
+    margin-bottom: 10px;
+  }
+
+  .tiling-method-container {
+    display: flex;      
+    justify-content: center; 
+    align-items: center;
+    width: 100%;         
+  }
+
+  .tiling-method-container h5 {
+    margin-right: 10px;  
+  }
+
 </style>
 
 
