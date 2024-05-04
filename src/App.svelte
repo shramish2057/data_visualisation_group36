@@ -2,12 +2,14 @@
 	import { Router, Route } from 'svelte-routing';
 	import Home from './components/Home.svelte';
 	import Treemap from './components/Treemap/Treemap.svelte';
+  	import BranchLeafMap from './components/BranchLeafMap/BranchLeafMap.svelte';
 </script>
 
 <main>
 	<Router>
 		<Route path="/" component={Home} />
 		<Route path="/treemap" component={Treemap} />
+		<Route path="/branchleafmap" component={BranchLeafMap} />
 	</Router>  
 </main>
 

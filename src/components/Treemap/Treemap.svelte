@@ -2,57 +2,50 @@
   import { onMount } from 'svelte';
   import * as d3 from 'd3';
   import Navbar from '../Navbar.svelte';
+  import TreemapStatic from './TreemapStatic.svelte';
 
   let svg;
   let currentRoot, currentDepth = 0;
-  let colorScaleRegions = d3.scaleOrdinal(d3.schemeCategory10);
+  let colorScaleRegions = d3.scaleOrdinal(d3.schemeTableau10);
   let colorScaleTerritories = d3.scaleOrdinal(d3.schemeSet3); ;
   let colorScaleAccountTypes = d3.scaleOrdinal(d3.schemeSet3);
 
   async function loadData() {
-    const orders = await d3.csv('data/orders.csv');
-    const regions = await d3.csv('data/regions.csv');
-    const customers = await d3.csv('data/customers.csv');
-    const mergedData = orders.map(order => {
-      const region = regions.find(region => region.Territory === order.Territory);
-      const customer = customers.find(customer => customer.Territory === order.Territory);
-      return {
-        ...order,
-        Region: region ? region.Region : 'Unknown',
-        AccountType: customer ? customer['Account Type'] : 'Unknown'
-      };
-    });
+      const orders = await d3.csv('data/orders.csv');
+      const regions = await d3.csv('data/regions.csv');
+      const customers = await d3.csv('data/customers.csv');
 
-    const regionMap = new Map();
+      // Mapping regions to their respective territories
+      let regionMap = new Map();
+      regions.forEach(region => {
+          regionMap.set(region.Region, { name: region.Region, children: [], value: 0 });
+      });
 
-    mergedData.forEach(d => {
-      if (!regionMap.has(d.Region)) {
-        regionMap.set(d.Region, { name: d.Region, children: [], value: 0, quantity: 0 });
-      }
-      const region = regionMap.get(d.Region);
-      let territory = region.children.find(t => t.name === d.Territory);
-      if (!territory) {
-        territory = { name: d.Territory, children: [], value: 0, quantity: 0, region: d.Region };
-        region.children.push(territory);
-      }
-      let accountType = territory.children.find(a => a.name === d.AccountType);
-      if (!accountType) {
-        accountType = { name: d.AccountType, value: 0, quantity: 0, territory: d.Territory, region: d.Region };
-        territory.children.push(accountType);
-      }
+      // Mapping territories to their respective account types and aggregating values
+      orders.forEach(order => {
+          let region = regions.find(region => region.Territory === order.Territory);
+          let customer = customers.find(customer => customer.Territory === order.Territory);
+          if (region) {
+              let regionEntry = regionMap.get(region.Region);
+              let territoryEntry = regionEntry.children.find(t => t.name === order.Territory);
+              if (!territoryEntry) {
+                  territoryEntry = { name: order.Territory, children: [], value: 0 };
+                  regionEntry.children.push(territoryEntry);
+              }
+              let accountTypeEntry = territoryEntry.children.find(a => a.name === customer['Account Type']);
+              if (!accountTypeEntry) {
+                  accountTypeEntry = { name: customer['Account Type'], value: 0 };
+                  territoryEntry.children.push(accountTypeEntry);
+              }
+              // Assuming 'Quantities' indicates the quantity of each order
+              let quantities = order.Quantities.split(', ').map(Number).reduce((a, b) => a + b, 0);
+              accountTypeEntry.value += quantities;  
+              territoryEntry.value += quantities; 
+              regionEntry.value += quantities;     
+          }
+      });
 
-      const orderValue = parsePricesAndQuantities(d.ProductPricesInCP, d.Quantities);
-      const quantities = d.Quantities.split(', ').map(Number).reduce((a, b) => a + b, 0);
-
-      accountType.value += orderValue;
-      accountType.quantity += quantities;
-      territory.value += orderValue;
-      territory.quantity += quantities;
-      region.value += orderValue;
-      region.quantity += quantities;
-    });
-
-    return { name: "Root", children: Array.from(regionMap.values()) };
+      return { name: "Root", children: Array.from(regionMap.values()) };
   }
 
   function updateTreemap(rootData, depth) {
@@ -61,67 +54,70 @@
 
     svg.selectAll('*').remove();
     const root = d3.hierarchy(rootData)
-      .eachBefore(d => d.data.id = (d.parent ? d.parent.data.id + '.' : '') + d.data.name)
-      .sum(d => d.value)
-      .sort((a, b) => b.value - a.value);
+        .sum(d => d.value) 
+        .sort((a, b) => b.value - a.value); 
 
-    const treemap = d3.treemap().size([960, 600]).padding(1).round(true);
+    const treemap = d3.treemap()
+                      .tile(d3.treemapSquarify)  
+                      .size([1160, 740])
+                      .paddingInner(1)  
+                      .round(true);
     treemap(root);
 
-    const nodes = depth !== null ? root.descendants().filter(d => d.depth === depth) : root.children;
 
-    if (!colorScaleTerritories) {
-      colorScaleTerritories = d3.scaleLinear()
-        .domain([0, d3.max(nodes, d => d.value)])
-        .range(['lightblue', 'darkblue']);
+    let nodes;
+    if (depth === 0) {
+        nodes = root.children;  
+    } else {
+
+        let parent = root.find(d => d.data === currentRoot);
+        nodes = parent ? parent.children : [];
     }
 
     const leaf = svg.selectAll('g')
-      .data(nodes)
-      .join('g')
-      .attr('transform', d => `translate(${d.x0},${d.y0})`);
+                    .data(nodes)
+                    .enter()
+                    .append('g')
+                    .attr('transform', d => `translate(${d.x0},${d.y0})`);
 
     leaf.append('rect')
-      .attr('id', d => d.data.id)
-      .attr('fill', d => {
-        if (depth === 0) return colorScaleRegions(d.data.id);
-        else if (depth === 1) return colorScaleTerritories(d.value);
-        else return colorScaleAccountTypes(d.data.id);
-      })
-      .attr('width', d => d.x1 - d.x0)
-      .attr('height', d => d.y1 - d.y0);
+        .attr('id', d => d.data.id)
+        .attr('fill', d => {
+            if (depth === 0) return colorScaleRegions(d.data.name);
+            else if (depth === 1) return colorScaleTerritories(d.data.name);
+            else return colorScaleAccountTypes(d.data.name);
+        })
+        .attr('width', d => d.x1 - d.x0)
+        .attr('height', d => d.y1 - d.y0);
 
     leaf.append('text')
-      .attr('x', 5)
-      .attr('y', '1.1em')
-      .text(d => d.data.name);
+        .attr('x', 5)
+        .attr('y', '1.1em')
+        .text(d => d.data.name);
 
     setupTooltips(leaf);
 
     leaf.on('click', (event, d) => {
-      if (depth < 2) updateTreemap(d.data, depth + 1);
+        if (currentDepth < 2) {  
+            updateTreemap(d.data, currentDepth + 1);
+        }
     });
+}
 
-  }
 
-  function addBackButton() {
-    d3.select('#backButton').on('click', () => {
-      if (currentDepth > 0) updateTreemap(currentRoot, currentDepth - 1);
-    });
-  }
 
   function setupTooltips(leaf) {
     leaf.on('mouseover', (event, d) => {
       const tooltip = d3.select('#tooltip');
+      let orderValue = d.data.value;
+      let orderValueDisplay = orderValue ? orderValue.toFixed(2) : 'N/A'; 
+      console.log("specific data", JSON.stringify(d.data))
       tooltip.style('opacity', 1)
         .style('left', (event.pageX + 10) + 'px')
         .style('top', (event.pageY + 10) + 'px')
         .html(`
-          <strong>Region:</strong> ${d.data.region || ''}<br>
-          <strong>Territory:</strong> ${d.data.territory || ''}<br>
-          <strong>Account Type:</strong> ${d.data.name}<br>
-          <strong>Order Quantity:</strong> ${d.data.quantity}<br>
-          <strong>Order Value:</strong> ${d.data.value.toFixed(2)}
+          <strong>Component:</strong> ${d.data.name}<br>
+          <strong>Order Value:</strong> ${orderValueDisplay}
         `);
     }).on('mousemove', event => {
       d3.select('#tooltip')
@@ -132,28 +128,23 @@
     });
   }
 
-  function parsePricesAndQuantities(prices, quantities) {
-    const priceArray = prices.split(', ').map(Number);
-    const quantityArray = quantities.split(', ').map(Number);
-    return priceArray.reduce((acc, price, index) => acc + (price * quantityArray[index]), 0);
-  }
-
   onMount(async () => {
     const hierarchicalData = await loadData();
     svg = d3.select('#treemap').append('svg')
-            .attr('width', 960)
-            .attr('height', 600)
+            .attr('width', 1200)
+            .attr('height', 800)
             .style('font', '10px sans-serif');
     updateTreemap(hierarchicalData, 0);
-    addBackButton();
 
   });
 </script>
 
 
-
 <Navbar />
 
+<h3>Treemap for Order sales and Quantity through different Regions and subsequent Territories</h3>
+<TreemapStatic />
+<h3>Drilldown Treemap (With Drilldown feature)</h3>
 <div id="treemap">
   <div id="tooltip" style="position: absolute; opacity: 0; pointer-events: none; background: white; border: 1px solid #ccc; padding: 10px;"></div>
 </div>
