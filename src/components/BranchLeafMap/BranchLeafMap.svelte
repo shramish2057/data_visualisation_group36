@@ -1,229 +1,343 @@
-async function loadData() {
-  const orders = await d3.csv('data/orders.csv');
-  const products = await d3.csv('data/products.csv');
+<script>
+  import { onMount } from 'svelte';
+  import Papa from 'papaparse';
 
-  const mergedData = orders.map(order => {
-    const product = products.find(product => product.product_code === order.productsIDs);
-    const subtype = product ? product.Subtype : 'Unknown';
-    const type = product ? product.Type : 'Unknown';
-    const quantities = parseInt(quantities); // Convert quantity to integer
+  let ordersData = [];
+  let productsData = [];
+  let mergedData = [];
 
-    return {
-      ProductsIDs: productsIDs,
-      Subtype: subtype,
-      Type: type,
-      Quantity: quantities
+  async function loadData() {
+    // Load orders data
+    const ordersResponse = await fetch('orders.csv');
+    const ordersText = await ordersResponse.text();
+    ordersData = Papa.parse(ordersText, { header: true }).data;
+
+    // Load products data
+    const productsResponse = await fetch('products.csv');
+    const productsText = await productsResponse.text();
+    productsData = Papa.parse(productsText, { header: true }).data;
+
+    // Explode and merge data
+    explodeAndMergeData();
+  }
+
+  function explodeAndMergeData() {
+    mergedData = [];
+
+    ordersData.forEach(order => {
+      const productIds = order.ProductIDs.split(';').map(id => id.trim());
+      const quantities = order.Quantities.split(';').map(qty => qty.trim());
+
+      productIds.forEach((productId, index) => {
+        const product = productsData.find(product => product.product_code === productId);
+        if (product) {
+          mergedData.push({
+            ProductIDs: productId,
+            Quantities: quantities[index],
+            Type: product.Type,
+            Subtype: product.Subtype
+          });
+        }
+      });
+    });
+  }
+
+  onMount(loadData);
+</script>
+
+<h1>Loading data...</h1>
+
+{#if mergedData.length > 0}
+  <table>
+    <thead>
+      <tr>
+        <th>ProductIDs</th>
+        <th>Quantities</th>
+        <th>Type</th>
+        <th>Subtype</th>
+      </tr>
+    </thead>
+    <tbody>
+      {#each mergedData as item}
+        <tr>
+          <td>{item.ProductIDs}</td>
+          <td>{item.Quantities}</td>
+          <td>{item.Type}</td>
+          <td>{item.Subtype}</td>
+        </tr>
+      {/each}
+    </tbody>
+  </table>
+{:else}
+  <p>No data loaded.</p>
+{/if}
+
+<script>
+  import { onMount } from 'svelte';
+  import * as d3 from 'd3';
+
+  let treeData = {};
+
+  async function loadData() {
+    // Load data and organize it into a hierarchical structure
+    // For simplicity, let's assume the data is already in the correct format
+    treeData = {
+      name: 'Products',
+      children: [
+        {
+          name: 'ADVENTURING EQUIPMENT',
+          children: [
+            { name: 'CONTAINER' },
+            { name: 'IOUN STONE' },
+            { name: 'MAGIC UTILITY' },
+            { name: 'WAND' },
+            { name: 'HELMET' },
+            { name: 'CLOTHING' },
+            { name: 'SPELL FOCUS' },
+            { name: 'SURVIVAL & WILDERNESS' },
+            { name: 'TOOLS' },
+            { name: 'BELT / GIRDLE' },
+            { name: 'ROD' },
+            { name: 'GAUNTLETS / GLOVES' },
+            { name: 'GOGGLES' },
+            { name: 'CLOAK' },
+            { name: 'BOOTS' },
+            { name: 'WIND INSTRUMENT' },
+            { name: 'BRACERS' },
+            { name: 'SIMPLE MELEE WEAPON' },
+            { name: 'GAMING SET' }
+          ]
+        },
+        {
+          name: 'ANIMALS & TRANSPORTATION',
+          children: [
+            { name: 'MOUNT' },
+            { name: 'LIVESTOCK' },
+            { name: 'VEHICLE' }
+          ]
+        },
+        {
+          name: 'ARMS & ARMOUR',
+          children: [
+            { name: 'LIGHT ARMOUR' },
+            { name: 'SIMPLE MELEE WEAPON' },
+            { name: 'MARTIAL MELEE WEAPON' },
+            { name: 'MARTIAL RANGED WEAPON' },
+            { name: 'MEDIUM ARMOUR' },
+            { name: 'HEAVY ARMOUR' },
+            { name: 'WAND' },
+            { name: 'STAFF' },
+            { name: 'BRACERS' },
+            { name: 'ARMOUR OTHER' },
+            { name: 'AMMUNITION' },
+            { name: 'HELMET' },
+            { name: 'SHIELD' },
+            { name: 'CLOAK' },
+            { name: 'SIMPLE RANGED WEAPON' },
+            { name: 'ROD' },
+            { name: 'WEAPON OTHER' },
+            { name: 'BOOTS' },
+            { name: 'GOGGLES' },
+            { name: 'GAUNTLETS / GLOVES' }
+          ]
+        },
+        {
+          name: 'JEWELRY',
+          children: [
+            { name: 'RING' },
+            { name: 'AMULET / NECKLACE' },
+            { name: 'MAGIC UTILITY' }
+          ]
+        },
+        {
+          name: 'MUSICAL INSTRUMENT',
+          children: [
+            { name: 'STRING INSTRUMENT' },
+            { name: 'WIND INSTRUMENT' },
+            { name: 'BRASS INSTRUMENT' },
+            { name: 'PERCUSSION INSTRUMENT' }
+          ]
+        },
+        {
+          name: 'POTIONS & SCROLLS',
+          children: [
+            { name: 'SCROLL' },
+            { name: 'POTIONS & ALCHEMY' }
+          ]
+        },
+        {
+          name: 'SUMMONING DEVICE',
+          children: [
+            { name: 'SUMMONING DEVICE' },
+            { name: 'RING' }
+          ]
+        },
+        {
+          name: 'TOOLS & KITS',
+          children: [
+            { name: 'TOOLS' },
+            { name: 'CONTAINER' },
+            { name: 'TOOL KITS' },
+            { name: 'GAMING SET' },
+            { name: 'SURVIVAL & WILDERNESS' }
+          ]
+        }
+      ]
     };
-  });
 
-const groupedData = d3.rollups(mergedData, 
-    v => d3.sum(v, d => d.Quantity), 
-    d => [d.Type, d.Subtype]
-  ).map(([key, value]) => ({
-    Type: key[0],
-    Subtype: key[1],
-    Value: value
-  }));
+    // Calculate values for each node based on orders data
+    calculateValues(treeData);
 
-  return groupedData;
-}
-
-   
-function TreeValue(
-  data,
-  {
-    // data is either tabular (array of objects) or hierarchy (nested objects)
-    path, // as an alternative to id and parentId, returns an array identifier, imputing internal nodes
-    id = Array.isArray(data) ? (d) => d.id : null, // if tabular data, given a d in data, returns a unique identifier (string)
-    parentId = Array.isArray(data) ? (d) => d.parentId : null, // if tabular data, given a node d, returns its parent’s identifier
-    children, // if hierarchical data, given a d in data, returns its children
-    format = ",", // format specifier string or function for values
-    value = (d) => d.value, // given a node d, returns a quantitative value (for area encoding; null for count)
-    sort = (a, b) => d3.descending(a.value, b.value), // how to sort nodes prior to layout
-    label, // given a node d, returns the name to display on the rectangle
-    title, // given a node d, returns its hover text
-    link, // given a node d, its link (if any)
-    linkTarget = "_blank", // the target attribute for links (if any)
-    width = 640, // outer width, in pixels
-    height = 400, // outer height, in pixels
-    margin = 0, // shorthand for margins
-    marginTop = margin, // top margin, in pixels
-    marginRight = margin, // right margin, in pixels
-    marginBottom = margin, // bottom margin, in pixels
-    marginLeft = margin, // left margin, in pixels
-    padding = 1, // cell padding, in pixels
-    round = false, // whether to round to exact pixels
-    color = d3.interpolateSpectral, // color scheme, if any
-    fill = "#ccc", // fill for node rects (if no color encoding)
-    fillOpacity = 1, // fill opacity for node rects
-    stroke = "#555", // stroke for links
-    strokeWidth = 1.5, // stroke width for links
-    strokeOpacity = 0.4, // stroke opacity for links
-    strokeLinejoin, // stroke line join for links
-    strokeLinecap, // stroke line cap for links
-    halo = "#fff", // color of label halo
-    haloWidth = 3, // padding around the labels
-    parentR = 3, // Radius for inner nodes
-    drawLayout = false,
-    minHeightForLabel = 10
-  } = {}
-) {
-  // If id and parentId options are specified, or the path option, use d3.stratify
-  // to convert tabular data to a hierarchy; otherwise we assume that the data is
-  // specified as an object {children} with nested objects (a.k.a. the “flare.json”
-  // format), and use d3.hierarchy.
-  let root =
-    path != null
-      ? d3.stratify().path(path)(data)
-      : id != null || parentId != null
-      ? d3.stratify().id(id).parentId(parentId)(data)
-      : d3.hierarchy(data, children).sort(sort);
-
-  // Compute the values of internal nodes by aggregating from the leaves.
-  value == null ? root.count() : root.sum((d) => Math.max(0, value(d)));
-
-  // Compute formats.
-  if (typeof format !== "function") format = d3.format(format);
-
-  // Sort the leaves (typically by descending value for a pleasing layout).
-  if (sort != null) root.sort(sort);
-
-  // Compute the partition layout. Note that x and y are swapped!
-  d3
-    .partition()
-    .size([height - marginTop - marginBottom, width - marginLeft - marginRight])
-    .padding(padding)
-    .round(round)(root);
-
-  // Construct a color scale.
-  if (color != null) {
-    color = d3
-      .scaleSequential([0, root.children.length - 1], color)
-      .unknown(fill);
-    root.children.forEach((child, i) => (child.index = i));
+    // Render the tree visualization
+    renderTree();
   }
 
-  const descendants = root.descendants();
+  function calculateValues(node) {
+    // Initialize values
+    node.ordersCount = 0;
+    node.quantitiesSum = 0;
 
-  // Radius scale
-  let rScale = d3
-    .scaleLinear()
-    .domain([0, d3.max(descendants, (d) => d?.value)])
-    .range([0.1, d3.max(descendants, (d) => (d.x1 - d.x0) / 2) - 1]);
+    // Recursively calculate values for children
+    if (node.children) {
+      node.children.forEach(child => {
+        calculateValues(child);
+        node.ordersCount += child.ordersCount || 0;
+        node.quantitiesSum += child.quantitiesSum || 0;
+      });
+    }
 
-  const svg = d3
-    .create("svg")
-    .attr("viewBox", [-marginLeft, -marginTop, width, height])
-    .attr("width", width)
-    .attr("height", height)
-    .attr("overflow", "visible")
-    .attr("style", "max-width: 100%; height: auto; height: intrinsic;")
-    .attr("font-family", "sans-serif")
-    .attr("font-size", 10);
-
-  // Draw the Icicle
-  if (drawLayout) {
-    svg
-      .append("g")
-      .selectAll("rect")
-      .data(descendants)
-      .join("rect")
-      .attr("y", (d) => d.x0)
-      .attr("x", (d) => d.y0)
-      .attr("height", (d) => d.x1 - d.x0)
-      .attr("width", (d) => d.y1 - d.y0)
-      .attr("fill", "none")
-      .attr("stroke", stroke)
-      .attr("stroke-opacity", strokeOpacity)
-      .attr("stroke-linecap", strokeLinecap)
-      .attr("stroke-linejoin", strokeLinejoin)
-      .attr("stroke-width", strokeWidth);
+    // Calculate values based on orders data (assuming mergedData is available)
+    if (node.name !== 'Products') {
+      node.ordersCount = mergedData.filter(item => item.Type === node.name).length;
+      node.quantitiesSum = mergedData.filter(item => item.Type === node.name).reduce((sum, item) => sum + parseInt(item.Quantities), 0);
+    }
   }
 
-  // Links
-  svg
-    .append("g")
-    .attr("fill", "none")
-    .attr("stroke", stroke)
-    .attr("stroke-opacity", strokeOpacity)
-    .attr("stroke-linecap", strokeLinecap)
-    .attr("stroke-linejoin", strokeLinejoin)
-    .attr("stroke-width", strokeWidth)
-    .selectAll("path")
-    .data(root.links())
-    .join("path")
-    .attr(
-      "d",
-      d3
-        .linkHorizontal()
-        .x((d) => d.y0 + (d.y1 - d.y0) / 2)
-        .y((d) => d.x0 + (d.x1 - d.x0) / 2)
-    );
+  function renderTree() {
+    const width = 600;
+    const height = 400;
 
-  const cell = svg
-    .append("g")
-    .selectAll("a")
-    .data(descendants)
-    .join("a")
-    .attr("xlink:href", link == null ? null : (d) => link(d.data, d))
-    .attr("target", link == null ? null : linkTarget)
-    .attr(
-      "transform",
-      (d) => `translate(${d.y0 + +(d.y1 - d.y0) / 2},${d.x0})`
-    );
+    const svg = d3.select('#tree-container')
+      .append('svg')
+      .attr('width', width)
+      .attr('height', height)
+      .append('g')
+      .attr('transform', 'translate(50,50)');
 
-  cell
-    .append("circle")
-    .attr("r", (d) => (!d.children ? rScale(d.value) : parentR))
-    .attr("cy", (d) => rScale(d.value))
-    .attr("fill", (d) =>
-      !d.children
-        ? color
-          ? color(d.ancestors().reverse()[1]?.index)
-          : fill
-        : "none"
-    )
-    .attr("stroke", (d) =>
-      d.children
-        ? color
-          ? color(d.ancestors().reverse()[1]?.index)
-          : fill
-        : "none"
-    )
-    .attr("fill-opacity", fillOpacity);
+    const treeLayout = d3.tree().size([width - 100, height - 100]);
 
-  const text = cell
-    .filter((d) => d.x1 - d.x0 > minHeightForLabel)
-    .append("text")
-    .attr("text-anchor", (d) => (d.children ? "end" : "start"))
-    .attr("x", (d) => (!d.children ? rScale(d.value) + 2 : -parentR - 2))
-    .attr("y", (d) => (d.x1 - d.x0) / 2)
-    .attr("paint-order", "stroke")
-    .attr("stroke", halo)
-    .attr("stroke-width", haloWidth)
-    .attr("dy", "0.32em");
+    const root = d3.hierarchy(treeData);
 
-  if (label != null) text.append("tspan").text((d) => label(d.data, d));
+    treeLayout(root);
 
-  text
-    .append("tspan")
-    .attr("fill-opacity", 0.7)
-    .attr("dx", label == null ? null : 3)
-    .text((d) => format(d.value));
+    const links = svg.selectAll('.link')
+      .data(root.links())
+      .enter()
+      .append('path')
+      .attr('class', 'link')
+      .attr('d', d3.linkHorizontal()
+        .x(d => d.y)
+        .y(d => d.x)
+      );
 
-  if (title != null) cell.append("title").text((d) => title(d.data, d));
+    const nodes = svg.selectAll('.node')
+      .data(root.descendants())
+      .enter()
+      .append('g')
+      .attr('class', 'node')
+      .attr('transform', d => `translate(${d.y},${d.x})`)
+      .on('click', toggleSubtypes)
+      .on('mouseover', showTooltip)
+      .on('mouseout', hideTooltip);
 
-  return svg.node();
-}
+    nodes.append('circle')
+      .attr('r', 5);
 
-loadData().then(data => {
-  chart = TreeValue(data, {
-    id: d => d.Type + '|' + d.Subtype,
-    parentId: d => null,
-    value: d => d.Value,
-    label: d => `${d.Type} - ${d.Subtype}`,
-    title: (d, n) => `Type: ${d.Type}, Subtype: ${d.Subtype}, Value: ${n.value}`,
-    width: 1152,
-    height: 800
-  });
-});
+    nodes.append('text')
+      .attr('dy', 3)
+      .attr('x', d => d.children ? -8 : 8)
+      .style('text-anchor', d => d.children ? 'end' : 'start')
+      .text(d => d.data.name);
+
+    function toggleSubtypes(event, d) {
+      if (d.children) {
+        d.children = null;
+      } else {
+        d.children = d.data._children;
+      }
+      treeLayout(root);
+      update(svg, root);
+    }
+
+    function showTooltip(event, d) {
+      // Display tooltip with quantities sold and number of orders
+      const tooltip = d3.select('#tooltip');
+      tooltip.style('display', 'block')
+        .style('left', `${event.pageX}px`)
+        .style('top', `${event.pageY}px`)
+        .html(`
+          <div>Type/Subtype: ${d.data.name}</div>
+          <div>Orders Count: ${d.data.ordersCount}</div>
+          <div>Quantities Sum: ${d.data.quantitiesSum}</div>
+        `);
+    }
+
+    function hideTooltip() {
+      // Hide tooltip
+      const tooltip = d3.select('#tooltip');
+      tooltip.style('display', 'none');
+    }
+
+    function update(svg, source) {
+      const nodes = root.descendants().filter(d => d.parent !== null);
+
+      const node = svg.selectAll('.node')
+        .data(nodes, d => d.data.name);
+
+      node.exit().remove();
+
+      const newNode = node.enter().append('g')
+        .attr('class', 'node')
+        .attr('transform', d => `translate(${source.y},${source.x})`)
+        .on('click', toggleSubtypes)
+        .on('mouseover', showTooltip)
+        .on('mouseout', hideTooltip);
+
+      newNode.append('circle')
+        .attr('r', 5)
+        .style('fill', d => d.children ? 'lightsteelblue' : '#fff');
+
+      newNode.append('text')
+        .attr('dy', 3)
+        .attr('x', d => d.children ? -8 : 8)
+        .style('text-anchor', d => d.children ? 'end' : 'start')
+        .text(d => d.data.name);
+
+      const link = svg.selectAll('.link')
+        .data(root.links(), d => d.target.data.name);
+
+      link.exit().remove();
+
+      const newLink = link.enter().append('path')
+        .attr('class', 'link')
+        .attr('d', d3.linkHorizontal()
+          .x(d => source.y)
+          .y(d => source.x)
+        );
+
+      link.merge(newLink)
+        .transition()
+        .duration(500)
+        .attr('d', d3.linkHorizontal()
+          .x(d => d.y)
+          .y(d => d.x)
+        );
+    }
+  }
+
+  onMount(loadData);
+</script>
+
+<div id="tree-container"></div>
+
+<div id="tooltip" style="position: absolute; display: none; background-color: rgba(255, 255, 255, 0.9); padding: 5px; border: 
