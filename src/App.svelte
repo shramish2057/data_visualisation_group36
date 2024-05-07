@@ -3,6 +3,7 @@
 	import Home from './components/Home.svelte';
 	import Treemap from './components/Treemap/Treemap.svelte';
   	import BranchLeafMap from './components/BranchLeafMap/BranchLeafMap.svelte';
+	import Streamgraph from './components/Streamgraph/Streamgraph.svelte';
 </script>
 
 <main>
@@ -10,6 +11,7 @@
 		<Route path="/" component={Home} />
 		<Route path="/treemap" component={Treemap} />
 		<Route path="/branchleafmap" component={BranchLeafMap} />
+		<Route path="/streamgraph" component={Streamgraph} />
 	</Router>  
 </main>
 
