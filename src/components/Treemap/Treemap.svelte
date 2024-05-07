@@ -64,7 +64,6 @@ async function loadDataForStaticTreemap() {
     });
     const staticMapRegions = await d3.csv('data/Regions.csv');
 
-    // Filter orders within selected date
     let filteredOrders = staticMapOrders.filter(d => (!startDate || d.OrderDate >= parseDate(startDate)) && (!endDate || d.OrderDate <= parseDate(endDate)));
     let regionStaticMap = new Map();
 
@@ -92,7 +91,6 @@ async function loadDataForStaticTreemap() {
 
     staticMapData = { name: "Root", children: Array.from(regionStaticMap.values()) };
 
-    // Set the color scale for regions once and do not change it
     colorScaleRegions.domain(staticMapData.children.map(region => region.name));
 
     if (!staticMapSvg) {
@@ -185,7 +183,7 @@ async function loadDataForStaticTreemap() {
       .text(d => `${d.data.name}`);
 
     drawLegend();
-    updateComparisonPanel(); // Ensure the panel is updated
+    updateComparisonPanel(); 
   }
 
   function toggleSelection(name) {
@@ -194,7 +192,6 @@ async function loadDataForStaticTreemap() {
     } else {
       selectedNodes.add(name);
     }
-    // Redraw the treemap to update selections visually
     drawStaticTreemap();
   }
 
@@ -234,7 +231,6 @@ async function loadDataForStaticTreemap() {
       .text(d => d);
   }
 
-  // Using d3.interpolateViridis for continuous color scale
   function getColor(index, total) {
     return d3.interpolateViridis(index / total);
   }
@@ -258,8 +254,8 @@ async function loadDataForStaticTreemap() {
       staticMapData.children.flatMap(region => region.children)
       .find(node => node.name === name));
 
-    updateColorScale(data); // Pass the actual data to update colors
-    const margin = { top: 80, right: 20, bottom: 100, left: 80 }; // More space for titles
+    updateColorScale(data); 
+    const margin = { top: 80, right: 20, bottom: 100, left: 80 };
     const width = 1200 - margin.left - margin.right;
     const height = 600 - margin.top - margin.bottom;
 
@@ -311,7 +307,7 @@ async function loadDataForStaticTreemap() {
             tooltip.style("display", "none");
           });
 
-      comparisonSvg.append("text")
+    comparisonSvg.append("text")
       .attr("class", "chart-title")
       .attr("x", 600) 
       .attr("y", 30) 
@@ -329,7 +325,6 @@ async function loadDataForStaticTreemap() {
       const legend = comparisonSvg.append("g")
         .attr("transform", "translate(150, 605)");
 
-      // Adding the header for the bar graph legend
       legend.append("text")
         .attr("class", "legend-title")
         .attr("x", 420)
@@ -366,7 +361,7 @@ async function loadDataForStaticTreemap() {
     });
 
     dateRange = d3.extent(ordersData, d => d.OrderDate);
-    startDate = formatDate(dateRange[0]); // Initialize to the full range
+    startDate = formatDate(dateRange[0]); 
     endDate = formatDate(dateRange[1]);
 
     loadDataForStaticTreemap();

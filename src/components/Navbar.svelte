@@ -6,6 +6,7 @@
     <ul>
         <li><Link to="/">Home</Link></li>
         <li><Link to="/treemap">Treemap Visualization</Link></li>
+        <li><Link to="/branchleafmap">BranchLeafMap Visualization</Link></li>
     </ul>
 </nav>
   

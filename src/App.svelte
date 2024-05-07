@@ -9,6 +9,7 @@
 	<Router>
 		<Route path="/" component={Home} />
 		<Route path="/treemap" component={Treemap} />
+		<Route path="/branchleafmap" component={BranchLeafMap} />
 	</Router>  
 </main>
 
